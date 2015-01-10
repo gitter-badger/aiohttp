@@ -27,6 +27,62 @@ class cistr(str):
         return self
 
 
+cdef class Item:
+
+    cdef object _key
+    cdef object _value
+
+    def __cinit__(self, key, value):
+        self._key = key
+        self._value = value
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, int i):
+        if i == 0 or i == -2:
+            return self._key
+        elif i == 1 or i == -1:
+            return self._value
+        else:
+            raise IndexError("Invalid index")
+
+    def __iter__(self):
+        yield self._key
+        yield self._value
+
+    def __contains__(self, value):
+        if value == self._key:
+            return True
+        if value == self._value:
+            return True
+        return False
+
+    def __reversed__(self):
+        yield self._value
+        yield self._key
+
+    def index(self, value):
+        if value == self._key:
+            return 0
+        elif value == self._value:
+            return 1
+        else:
+            raise ValueError()
+
+    def count(self, value):
+        cdef int ret
+        ret = 0
+        if value == self._key:
+            ret += 1
+        if value == self._value:
+            ret += 1
+        return ret
+
+
+abc.Sequence.register(Item)
+
+
 cdef class MultiDict:
     """Read-only ordered dictionary that can have multiple values for each key.
 
@@ -50,7 +106,7 @@ cdef class MultiDict:
         if args:
             if hasattr(args[0], 'items'):
                 for item in args[0].items():
-                    self._add(item)
+                    self._add_tuple(item)
             else:
                 for arg in args[0]:
                     if not len(arg) == 2:
@@ -61,23 +117,36 @@ cdef class MultiDict:
                         item = tuple(arg)
                     else:
                         item = arg
-                    self._add(item)
+                    self._add_tuple(item)
 
         for item in kwargs.items():
-            self._add(item)
+            self._add_tuple(item)
 
-    cdef _add(self, tuple item):
-        self._items.append(item)
+    cdef _add_tuple(self, tuple item):
+        cdef object key
+        cdef object value
+        if len(item) != 2:
+            raise TypeError("Tuple should be (key, value) pair")
+        key = item[0]
+        value = item[1]
+        self._add(key, value)
 
-    def getall(self, key, default=_marker):
+    cdef _add(self, object key, object value):
+        self._items.append(Item(key, value))
+
+    def getall(self, key not None, default=_marker):
         """
         Return a list of all values matching the key (may be an empty list)
         """
         return self._getall(key, default)
 
     cdef _getall(self, key, default):
-        cdef tuple res
-        res = tuple(v for k, v in self._items if k == key)
+        cdef list res
+        cdef Item item
+        res = []
+        for item in self._items:
+            if item._key == key:
+                res.append(item._value)
         if res:
             return res
         if not res and default is not _marker:
@@ -91,10 +160,10 @@ cdef class MultiDict:
         return self._getone(key, default)
 
     cdef _getone(self, key, default):
-        cdef tuple item
+        cdef Item item
         for item in self._items:
-            if item[0] == key:
-                return item[1]
+            if item._key == key:
+                return item._value
         if default is not _marker:
             return default
         raise KeyError('Key not found: %r' % key)
@@ -112,37 +181,39 @@ cdef class MultiDict:
         return self._getitem(key)
 
     cdef _getitem(self, key):
-        cdef tuple item
+        cdef Item item
         for item in self._items:
-            if item[0] == key:
-                return item[1]
+            if item._key == key:
+                return item._value
         raise KeyError(key)
 
     def get(self, key, default=None):
         return self._get(key, default)
 
     cdef _get(self, key, default):
-        cdef tuple item
+        cdef Item item
         for item in self._items:
-            if item[0] == key:
-                return item[1]
+            if item._key == key:
+                return item._value
         return default
 
     def __contains__(self, key):
         return self._contains(key)
 
     cdef _contains(self, key):
-        cdef tuple item
+        cdef Item item
         for item in self._items:
-            if item[0] == key:
+            if item._key == key:
                 return True
         return False
 
     cdef _delitem(self, key, int raise_key_error):
         cdef int found
+        cdef Item item
         found = False
         for i in range(len(self._items) - 1, -1, -1):
-            if self._items[i][0] == key:
+            item = self._items[0]
+            if item._key == key:
                 del self._items[i]
                 found = True
         if not found and raise_key_error:
@@ -175,7 +246,7 @@ cdef class MultiDict:
     def __richcmp__(self, other, op):
         cdef MultiDict typed_self = self
         cdef MultiDict typed_other
-        cdef tuple item
+        cdef Item item
         if op == 2:
             if not isinstance(other, abc.Mapping):
                 return NotImplemented
@@ -183,8 +254,8 @@ cdef class MultiDict:
                 typed_other = other
                 return typed_self._items == typed_other._items
             for item in typed_self._items:
-                nv = other.get(item[0], _marker)
-                if item[1] != nv:
+                nv = other.get(item._key, _marker)
+                if item._value != nv:
                     return False
             return True
         elif op != 2:
@@ -194,8 +265,8 @@ cdef class MultiDict:
                 typed_other = other
                 return typed_self._items != typed_other._items
             for item in typed_self._items:
-                nv = other.get(item[0], _marker)
-                if item[1] == nv:
+                nv = other.get(item._key, _marker)
+                if item._value == nv:
                     return True
             return False
         else:
@@ -225,8 +296,8 @@ cdef class CaseInsensitiveMultiDict(MultiDict):
             return s
         return s.upper()
 
-    cdef _add(self, tuple item):
-        self._items.append((self._upper(item[0]), item[1]))
+    cdef _add(self, object key, object value):
+        self._items.append(Item(self._upper(key), value))
 
     def getall(self, key, default=_marker):
         return self._getall(self._upper(key), default)
@@ -254,7 +325,7 @@ cdef class MutableMultiDict(MultiDict):
         """
         Add the key and value, not overwriting any previous value.
         """
-        self._add((key, value))
+        self._add(key, value)
 
     def extend(self, *args, **kwargs):
         """Extends current MutableMultiDict with more values.
@@ -271,16 +342,17 @@ cdef class MutableMultiDict(MultiDict):
 
     def __setitem__(self, key, value):
         self._delitem(key, False)
-        self._add((key, value))
+        self._add(key, value)
 
     def __delitem__(self, key):
         self._delitem(key, True)
 
     def setdefault(self, key, default=None):
-        for k, v in self._items:
-            if k == key:
-                return v
-        self._add((key, default))
+        cdef Item item
+        for item in self._items:
+            if item._key == key:
+                return item._value
+        self._add(key, default)
         return default
 
     def pop(self, key, default=None):
@@ -306,7 +378,7 @@ cdef class CaseInsensitiveMutableMultiDict(CaseInsensitiveMultiDict):
         """
         Add the key and value, not overwriting any previous value.
         """
-        self._add((key, value))
+        self._add(key, value)
 
     def extend(self, *args, **kwargs):
         """Extends current MutableMultiDict with more values.
@@ -324,17 +396,18 @@ cdef class CaseInsensitiveMutableMultiDict(CaseInsensitiveMultiDict):
     def __setitem__(self, key, value):
         key = self._upper(key)
         self._delitem(key, False)
-        self._add((key, value))
+        self._add(key, value)
 
     def __delitem__(self, key):
         self._delitem(self._upper(key), True)
 
     def setdefault(self, key, default=None):
+        cdef Item item
         key = self._upper(key)
-        for k, v in self._items:
-            if k == key:
-                return v
-        self._add((key, default))
+        for item in self._items:
+            if item._key == key:
+                return item._value
+        self._add(key, default)
         return default
 
     def pop(self, key, default=None):
@@ -360,22 +433,25 @@ cdef class _ViewBase:
 
     def __cinit__(self, list items, int getall):
         cdef list items_to_use
+        cdef Item item
         cdef set keys
 
         if getall:
             self._items = items
-            self._keys = [item[0] for item in items]
+            self._keys = []
+            for item in items:
+                self._keys.append(item._key)
         else:
             self._items = []
             keys = set()
             self._keys = []
-            for i in items:
-                key = i[0]
+            for item in items:
+                key = item._key
                 if key in keys:
                     continue
                 keys.add(key)
                 self._keys.append(key)
-                self._items.append(i)
+                self._items.append(item)
 
     def __len__(self):
         return len(self._items)
@@ -447,15 +523,17 @@ cdef class _ItemsView(_ViewBaseSet):
 
     def isdisjoint(self, other):
         'Return True if two sets have a null intersection.'
-        cdef tuple value
-        for value in self._items:
-            if value in other:
+        cdef Item item
+        for item in self._items:
+            if item in other:
                 return False
         return True
 
     def __contains__(self, item):
-        assert isinstance(item, tuple) or isinstance(item, list)
-        assert len(item) == 2
+        if not isinstance(item, Item):
+            assert isinstance(item, tuple) or isinstance(item, list)
+            assert len(item) == 2
+            item = Item(item[0], item[1])
         return item in self._items
 
     def __iter__(self):
@@ -468,14 +546,16 @@ abc.ItemsView.register(_ItemsView)
 cdef class _ValuesView(_ViewBase):
 
     def __contains__(self, value):
+        cdef Item item
         for item in self._items:
-            if item[1] == value:
+            if item._value == value:
                 return True
         return False
 
     def __iter__(self):
+        cdef Item item
         for item in self._items:
-            yield item[1]
+            yield item._value
 
 
 abc.ValuesView.register(_ValuesView)
