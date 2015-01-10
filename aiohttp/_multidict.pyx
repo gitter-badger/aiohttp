@@ -27,7 +27,7 @@ class cistr(str):
         return self
 
 
-cdef class Item:
+cdef class Pair:
 
     cdef object _key
     cdef object _value
@@ -79,8 +79,11 @@ cdef class Item:
             ret += 1
         return ret
 
+    def __repr__(self):
+        return 'Pair({}, {})'.format(self._key, self._value)
 
-abc.Sequence.register(Item)
+
+abc.Sequence.register(Pair)
 
 
 cdef class MultiDict:
@@ -107,8 +110,8 @@ cdef class MultiDict:
 
         if args:
             if hasattr(args[0], 'items'):
-                for item in args[0].items():
-                    self._add_tuple(item)
+                for pair in args[0].items():
+                    self._add_tuple(pair)
             else:
                 for arg in args[0]:
                     if not len(arg) == 2:
@@ -134,7 +137,7 @@ cdef class MultiDict:
         self._add(key, value)
 
     cdef _add(self, object key, object value):
-        self._items.append(Item(key, value))
+        self._items.append(Pair(key, value))
 
     def getall(self, key not None, default=_marker):
         """
@@ -144,11 +147,11 @@ cdef class MultiDict:
 
     cdef _getall(self, key, default):
         cdef list res
-        cdef Item item
+        cdef Pair pair
         res = []
-        for item in self._items:
-            if item._key == key:
-                res.append(item._value)
+        for pair in self._items:
+            if pair._key == key:
+                res.append(pair._value)
         if res:
             return res
         if not res and default is not _marker:
@@ -162,10 +165,10 @@ cdef class MultiDict:
         return self._getone(key, default)
 
     cdef _getone(self, key, default):
-        cdef Item item
-        for item in self._items:
-            if item._key == key:
-                return item._value
+        cdef Pair pair
+        for pair in self._items:
+            if pair._key == key:
+                return pair._value
         if default is not _marker:
             return default
         raise KeyError('Key not found: %r' % key)
@@ -183,39 +186,39 @@ cdef class MultiDict:
         return self._getitem(key)
 
     cdef _getitem(self, key):
-        cdef Item item
-        for item in self._items:
-            if item._key == key:
-                return item._value
+        cdef Pair pair
+        for pair in self._items:
+            if pair._key == key:
+                return pair._value
         raise KeyError(key)
 
     def get(self, key, default=None):
         return self._get(key, default)
 
     cdef _get(self, key, default):
-        cdef Item item
-        for item in self._items:
-            if item._key == key:
-                return item._value
+        cdef Pair pair
+        for pair in self._items:
+            if pair._key == key:
+                return pair._value
         return default
 
     def __contains__(self, key):
         return self._contains(key)
 
     cdef _contains(self, key):
-        cdef Item item
-        for item in self._items:
-            if item._key == key:
+        cdef Pair pair
+        for pair in self._items:
+            if pair._key == key:
                 return True
         return False
 
     cdef _delitem(self, key, int raise_key_error):
         cdef int found
-        cdef Item item
+        cdef Pair pair
         found = False
         for i in range(len(self._items) - 1, -1, -1):
-            item = self._items[0]
-            if item._key == key:
+            pair = self._items[0]
+            if pair._key == key:
                 del self._items[i]
                 found = True
         if not found and raise_key_error:
@@ -248,16 +251,16 @@ cdef class MultiDict:
     def __richcmp__(self, other, op):
         cdef MultiDict typed_self = self
         cdef MultiDict typed_other
-        cdef Item item
+        cdef Pair pair
         if op == 2:
             if not isinstance(other, abc.Mapping):
                 return NotImplemented
             if isinstance(other, MultiDict):
                 typed_other = other
                 return typed_self._items == typed_other._items
-            for item in typed_self._items:
-                nv = other.get(item._key, _marker)
-                if item._value != nv:
+            for pair in typed_self._items:
+                nv = other.get(pair._key, _marker)
+                if pair._value != nv:
                     return False
             return True
         elif op != 2:
@@ -266,9 +269,9 @@ cdef class MultiDict:
             if isinstance(other, MultiDict):
                 typed_other = other
                 return typed_self._items != typed_other._items
-            for item in typed_self._items:
-                nv = other.get(item._key, _marker)
-                if item._value == nv:
+            for pair in typed_self._items:
+                nv = other.get(pair._key, _marker)
+                if pair._value == nv:
                     return True
             return False
         else:
@@ -299,7 +302,7 @@ cdef class CaseInsensitiveMultiDict(MultiDict):
         return s.upper()
 
     cdef _add(self, object key, object value):
-        self._items.append(Item(self._upper(key), value))
+        self._items.append(Pair(self._upper(key), value))
 
     def getall(self, key, default=_marker):
         return self._getall(self._upper(key), default)
@@ -350,10 +353,10 @@ cdef class MutableMultiDict(MultiDict):
         self._delitem(key, True)
 
     def setdefault(self, key, default=None):
-        cdef Item item
-        for item in self._items:
-            if item._key == key:
-                return item._value
+        cdef Pair pair
+        for pair in self._items:
+            if pair._key == key:
+                return pair._value
         self._add(key, default)
         return default
 
@@ -404,11 +407,11 @@ cdef class CaseInsensitiveMutableMultiDict(CaseInsensitiveMultiDict):
         self._delitem(self._upper(key), True)
 
     def setdefault(self, key, default=None):
-        cdef Item item
+        cdef Pair pair
         key = self._upper(key)
-        for item in self._items:
-            if item._key == key:
-                return item._value
+        for pair in self._items:
+            if pair._key == key:
+                return pair._value
         self._add(key, default)
         return default
 
@@ -435,25 +438,25 @@ cdef class _ViewBase:
 
     def __cinit__(self, list items, int getall):
         cdef list items_to_use
-        cdef Item item
+        cdef Pair pair
         cdef set keys
 
         if getall:
             self._items = items
             self._keys = []
-            for item in items:
-                self._keys.append(item._key)
+            for pair in items:
+                self._keys.append(pair._key)
         else:
             self._items = []
             keys = set()
             self._keys = []
-            for item in items:
-                key = item._key
+            for pair in items:
+                key = pair._key
                 if key in keys:
                     continue
                 keys.add(key)
                 self._keys.append(key)
-                self._items.append(item)
+                self._items.append(pair)
 
     def __len__(self):
         return len(self._items)
@@ -525,18 +528,21 @@ cdef class _ItemsView(_ViewBaseSet):
 
     def isdisjoint(self, other):
         'Return True if two sets have a null intersection.'
-        cdef Item item
-        for item in self._items:
-            if item in other:
+        cdef Pair pair
+        for pair in self._items:
+            if pair in other:
                 return False
         return True
 
     def __contains__(self, item):
-        if not isinstance(item, Item):
+        cdef Pair pair
+        if not isinstance(item, Pair):
             assert isinstance(item, tuple) or isinstance(item, list)
             assert len(item) == 2
-            item = Item(item[0], item[1])
-        return item in self._items
+            pair = Pair(item[0], item[1])
+        else:
+            pair = item
+        return pair in self._items
 
     def __iter__(self):
         return iter(self._items)
@@ -548,16 +554,16 @@ abc.ItemsView.register(_ItemsView)
 cdef class _ValuesView(_ViewBase):
 
     def __contains__(self, value):
-        cdef Item item
-        for item in self._items:
-            if item._value == value:
+        cdef Pair pair
+        for pair in self._items:
+            if pair._value == value:
                 return True
         return False
 
     def __iter__(self):
-        cdef Item item
-        for item in self._items:
-            yield item._value
+        cdef Pair pair
+        for pair in self._items:
+            yield pair._value
 
 
 abc.ValuesView.register(_ValuesView)
