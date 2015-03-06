@@ -1,6 +1,10 @@
 http client/server for asyncio
 ==============================
 
+.. image:: https://badges.gitter.im/Join%20Chat.svg
+   :alt: Join the chat at https://gitter.im/ariddell/aiohttp
+   :target: https://gitter.im/ariddell/aiohttp?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
+
 .. image:: https://raw.github.com/KeepSafe/aiohttp/master/docs/aiohttp-icon.png
   :height: 64px
   :width: 64px
